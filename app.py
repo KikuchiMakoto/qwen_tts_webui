@@ -12,6 +12,7 @@ import streamlit.components.v1 as components
 import torch
 
 from engine import GREETINGS, SUPPORTED_LANGUAGES, TTSEngine
+from i18n import DEFAULT_TTS_LANGUAGE_INDEX, TRANSLATIONS, detect_language
 from voice_store import (
     export_voice,
     import_voice,
@@ -20,6 +21,11 @@ from voice_store import (
     remove_voice,
     save_voice,
 )
+
+# --- 言語設定 ---
+_lang = detect_language()
+T = TRANSLATIONS[_lang]
+_default_lang_idx = DEFAULT_TTS_LANGUAGE_INDEX[_lang]
 
 st.set_page_config(
     page_title="Qwen3-TTS WebUI",
@@ -62,11 +68,11 @@ def get_audio_duration(uploaded_file) -> float:
         with sf.SoundFile(io.BytesIO(data)) as f:
             return len(f) / f.samplerate
     except Exception as e:
-        raise ValueError(f"音声ファイルの読み込みに失敗しました: {e}") from e
+        raise ValueError(T["err_audio_load"].format(e=e)) from e
 
 
 def validate_audio_duration(uploaded_file) -> bool:
-    """音声の長さが学習に適した範囲（3秒〜15秒）かどうかを検証する。
+    """音声の長さが学習に適した範囲かどうかを検証する。
 
     範囲外または読み込み不可の場合は st.error でエラーを表示し False を返す。
     """
@@ -77,17 +83,19 @@ def validate_audio_duration(uploaded_file) -> bool:
         return False
     if duration < VOICE_LEARNING_MIN_DURATION or duration > VOICE_LEARNING_MAX_DURATION:
         st.error(
-            f"音声の長さが {duration:.1f} 秒です。"
-            f"音声学習には {VOICE_LEARNING_MIN_DURATION:.0f}秒〜"
-            f"{VOICE_LEARNING_MAX_DURATION:.0f}秒の音声を使用してください。"
+            T["err_duration"].format(
+                duration=duration,
+                min=VOICE_LEARNING_MIN_DURATION,
+                max=VOICE_LEARNING_MAX_DURATION,
+            )
         )
         return False
     return True
 
 
-def show_completion_notification(message: str = "完了しました！"):
+def show_completion_notification(message: str | None = None):
     """完了通知を表示する（Toast + 音声）."""
-    st.toast(message, icon="✅")
+    st.toast(message if message is not None else T["done"], icon="✅")
     components.html(
         """
         <script>
@@ -118,25 +126,25 @@ if "is_generating" not in st.session_state:
 
 with st.sidebar:
     st.title("Qwen3-TTS WebUI")
-    st.caption(f"デバイス: {st.session_state.engine.get_device_info()}")
+    st.caption(T["device_label"].format(info=st.session_state.engine.get_device_info()))
 
     model_size = st.selectbox(
-        "モデルサイズ",
+        T["model_size_label"],
         ["1.7B", "0.6B"],
         index=0,
-        help="1.7B（デフォルト）は高品質、0.6Bは軽量版です。",
+        help=T["model_size_help"],
         disabled=st.session_state.is_generating,
     )
 
     st.divider()
 
     mode = st.radio(
-        "モード選択",
+        T["select_mode"],
         [
-            "オリジナルボイスモデル学習",
-            "音声合成",
-            "オリジナル音声即時合成",
-            "音声合成WebAPI",
+            T["mode_voice_learning"],
+            T["mode_tts"],
+            T["mode_instant_tts"],
+            T["mode_web_api"],
         ],
         index=0,
         disabled=st.session_state.is_generating,
@@ -145,57 +153,57 @@ with st.sidebar:
     st.divider()
 
     # 生成パラメータ設定（音声合成モードで使用）
-    with st.expander("生成パラメータ設定", expanded=False):
+    with st.expander(T["gen_params"], expanded=False):
         gen_temperature = st.slider(
-            "温度（感情値）",
+            T["temperature"],
             min_value=0.30,
             max_value=1.30,
             value=0.65,
             step=0.05,
             key="gen_temperature",
-            help="感情の豊かさを制御します。高いほど表現豊かでランダムな発音、低いほど落ち着いた安定した発音になります。",
+            help=T["temperature_help"],
             disabled=st.session_state.is_generating,
         )
         gen_top_p = st.slider(
-            "Top-p（核サンプリング）",
+            T["top_p"],
             min_value=0.80,
             max_value=1.00,
             value=0.90,
             step=0.05,
             key="gen_top_p",
-            help="累積確率が上位p以内のトークンのみからサンプリングします。低いほど安定した出力になります。",
+            help=T["top_p_help"],
             disabled=st.session_state.is_generating,
         )
         gen_top_k = st.slider(
-            "Top-k",
+            T["top_k"],
             min_value=10,
             max_value=50,
             value=50,
             step=1,
             key="gen_top_k",
-            help="確率の高い上位k件のトークンのみからサンプリングします。低いほど安定した出力になります。",
+            help=T["top_k_help"],
             disabled=st.session_state.is_generating,
         )
         gen_repetition_penalty = st.slider(
-            "繰り返し抑制（Repetition Penalty）",
+            T["repetition_penalty"],
             min_value=1.00,
             max_value=1.50,
             value=1.15,
             step=0.05,
             key="gen_repetition_penalty",
-            help="同じ音やフレーズの繰り返しを抑制します。高いほど繰り返しが起きにくくなります。",
+            help=T["repetition_penalty_help"],
             disabled=st.session_state.is_generating,
         )
 
     st.divider()
 
     # モードに応じた履歴クリアボタン
-    if mode == "音声合成" and st.session_state.tts_history:
-        if st.button("チャット履歴クリア", key="clear_tts", disabled=st.session_state.is_generating):
+    if mode == T["mode_tts"] and st.session_state.tts_history:
+        if st.button(T["clear_chat"], key="clear_tts", disabled=st.session_state.is_generating):
             st.session_state.tts_history = []
             st.rerun()
-    elif mode == "オリジナル音声即時合成" and st.session_state.instant_history:
-        if st.button("チャット履歴クリア", key="clear_instant", disabled=st.session_state.is_generating):
+    elif mode == T["mode_instant_tts"] and st.session_state.instant_history:
+        if st.button(T["clear_chat"], key="clear_instant", disabled=st.session_state.is_generating):
             st.session_state.instant_history = []
             st.rerun()
 
@@ -203,38 +211,38 @@ with st.sidebar:
 # =============================================================================
 # モード1: オリジナルボイスモデル学習
 # =============================================================================
-if mode == "オリジナルボイスモデル学習":
-    st.header("オリジナルボイスモデル学習")
-    st.markdown("リファレンス音声からオリジナルボイスモデルを作成します。")
+if mode == T["mode_voice_learning"]:
+    st.header(T["mode1_header"])
+    st.markdown(T["mode1_desc"])
 
     col_create, col_saved = st.columns([3, 2])
 
     with col_create:
-        st.subheader("新規モデル作成")
+        st.subheader(T["new_model"])
 
         audio_file = st.file_uploader(
-            "リファレンス音声ファイル",
+            T["ref_audio_file"],
             type=["wav", "mp3", "flac", "ogg", "m4a"],
             key="train_audio",
-            help="3秒以上の音声ファイルを推奨します。",
+            help=T["ref_audio_help"],
         )
 
         ref_text = st.text_area(
-            "音声の文字起こし",
-            placeholder="アップロードした音声の内容をテキストで入力してください",
+            T["ref_transcript"],
+            placeholder=T["ref_transcript_placeholder"],
             key="train_text",
         )
 
         ref_lang = st.selectbox(
-            "リファレンス音声の言語",
+            T["ref_lang"],
             SUPPORTED_LANGUAGES,
-            index=0,
+            index=_default_lang_idx,
             key="train_lang",
         )
 
         nickname = st.text_input(
-            "ニックネーム",
-            placeholder="ボイスモデルの名前を入力",
+            T["nickname"],
+            placeholder=T["nickname_placeholder"],
             key="train_nickname",
         )
 
@@ -242,39 +250,37 @@ if mode == "オリジナルボイスモデル学習":
 
         with col_btn1:
             create_clicked = st.button(
-                "モデル作成", type="primary", use_container_width=True
+                T["create_model"], type="primary", use_container_width=True
             )
 
         with col_btn2:
-            preview_clicked = st.button("挨拶プレビュー", use_container_width=True)
+            preview_clicked = st.button(T["greeting_preview"], use_container_width=True)
 
         if create_clicked:
             if not audio_file or not ref_text or not nickname:
-                st.error(
-                    "音声ファイル、文字起こし、ニックネームをすべて入力してください。"
-                )
+                st.error(T["err_fill_all"])
             elif not validate_audio_duration(audio_file):
                 pass
             else:
                 audio_path = save_uploaded_audio(audio_file)
                 st.session_state.is_generating = True
                 try:
-                    with st.spinner("ボイスモデルを作成中..."):
+                    with st.spinner(T["creating_model"]):
                         prompt_items = st.session_state.engine.create_voice_prompt(
                             ref_audio=audio_path,
                             ref_text=ref_text,
                             model_size=model_size,
                         )
                         save_voice(nickname, prompt_items, ref_lang, model_size)
-                    st.success(f"ボイスモデル '{nickname}' を作成しました。")
-                    show_completion_notification("ボイスモデル作成完了")
+                    st.success(T["model_created"].format(nickname=nickname))
+                    show_completion_notification(T["model_created_toast"])
                 finally:
                     st.session_state.is_generating = False
                 st.rerun()
 
         if preview_clicked:
             if not audio_file or not ref_text:
-                st.error("音声ファイルと文字起こしを入力してください。")
+                st.error(T["err_fill_audio_text"])
             elif not validate_audio_duration(audio_file):
                 pass
             else:
@@ -282,7 +288,7 @@ if mode == "オリジナルボイスモデル学習":
                 greeting = GREETINGS.get(ref_lang, GREETINGS["English"])
                 st.session_state.is_generating = True
                 try:
-                    with st.spinner(f"挨拶音声を生成中（{ref_lang}）..."):
+                    with st.spinner(T["generating_greeting"].format(lang=ref_lang)):
                         prompt_items = st.session_state.engine.create_voice_prompt(
                             ref_audio=audio_path,
                             ref_text=ref_text,
@@ -294,25 +300,28 @@ if mode == "オリジナルボイスモデル学習":
                             voice_clone_prompt=prompt_items,
                             model_size=model_size,
                         )
-                    st.info(f"挨拶: {greeting}")
-                    show_completion_notification("プレビュー完了")
+                    st.info(T["greeting_label"].format(greeting=greeting))
+                    show_completion_notification(T["preview_done"])
                     st.audio(audio_to_bytes(wav, sr), format="audio/wav")
                 finally:
                     st.session_state.is_generating = False
 
     with col_saved:
-        st.subheader("保存済みモデル")
+        st.subheader(T["saved_models"])
         voices = list_voices_by_size(model_size)
 
         if not voices:
-            st.info(f"保存されたボイスモデルはありません（{model_size}）。")
+            st.info(T["no_saved_models"].format(model_size=model_size))
 
         for voice in voices:
             with st.container(border=True):
                 st.markdown(f"**{voice['nickname']}**")
                 st.caption(
-                    f"言語: {voice['language']} | サイズ: {voice['model_size']} | "
-                    f"作成日: {voice['created_at'][:10]}"
+                    T["voice_caption"].format(
+                        lang=voice["language"],
+                        size=voice["model_size"],
+                        date=voice["created_at"][:10],
+                    )
                 )
 
                 c1, c2 = st.columns(2)
@@ -321,7 +330,7 @@ if mode == "オリジナルボイスモデル学習":
                         voice["nickname"], voice["model_size"]
                     )
                     st.download_button(
-                        "エクスポート",
+                        T["export"],
                         data=data,
                         file_name=filename,
                         mime="application/octet-stream",
@@ -330,7 +339,7 @@ if mode == "オリジナルボイスモデル学習":
                     )
                 with c2:
                     if st.button(
-                        "削除",
+                        T["delete"],
                         key=f"del_{voice['nickname']}",
                         use_container_width=True,
                     ):
@@ -338,75 +347,79 @@ if mode == "オリジナルボイスモデル学習":
                         st.rerun()
 
         st.divider()
-        st.subheader("モデルインポート")
+        st.subheader(T["model_import"])
 
         import_file = st.file_uploader(
-            f"ボイスモデルファイル (.pt) - {model_size}向けのみ",
+            T["import_file_label"].format(model_size=model_size),
             type=["pt"],
             key="import_file",
         )
-        import_nickname = st.text_input("インポート名", key="import_nickname")
-        import_lang = st.selectbox("言語", SUPPORTED_LANGUAGES, key="import_lang")
+        import_nickname = st.text_input(T["import_name"], key="import_nickname")
+        import_lang = st.selectbox(
+            T["import_lang"], SUPPORTED_LANGUAGES, index=_default_lang_idx, key="import_lang"
+        )
 
-        if st.button("インポート", use_container_width=True):
+        if st.button(T["import_btn"], use_container_width=True):
             if import_file and import_nickname:
                 try:
                     import_voice(
                         import_nickname, import_file.read(), import_lang, model_size
                     )
-                    st.success(f"'{import_nickname}' をインポートしました。")
+                    st.success(T["import_success"].format(nickname=import_nickname))
                     st.rerun()
                 except ValueError as e:
-                    st.error(f"インポート失敗: {e}")
+                    st.error(T["import_fail"].format(err=e))
             else:
-                st.error("ファイルとインポート名を入力してください。")
+                st.error(T["err_fill_file_name"])
 
 
 # =============================================================================
 # モード2: 音声合成
 # =============================================================================
-elif mode == "音声合成":
-    st.header("音声合成")
+elif mode == T["mode_tts"]:
+    st.header(T["mode2_header"])
 
     # 設定エリア
     col_s1, col_s2 = st.columns(2)
 
     with col_s1:
         voice_source = st.radio(
-            "ボイスモデルソース",
-            ["保存済みモデル", "ファイルアップロード"],
+            T["voice_source"],
+            [T["saved_model_option"], T["file_upload_option"]],
             horizontal=True,
             key="tts_source",
         )
 
     with col_s2:
         output_lang = st.selectbox(
-            "出力言語",
+            T["output_lang"],
             SUPPORTED_LANGUAGES,
-            index=0,
+            index=_default_lang_idx,
             key="tts_lang",
         )
 
     # ボイスモデルの読み込み
     voice_prompt = None
 
-    if voice_source == "保存済みモデル":
+    if voice_source == T["saved_model_option"]:
         voices = list_voices_by_size(model_size)
         voice_options = [v["nickname"] for v in voices]
         if voice_options:
             selected_voice = st.selectbox(
-                "ボイスモデル", voice_options, key="tts_voice"
+                T["voice_model"], voice_options, key="tts_voice"
             )
             if selected_voice:
                 voice_prompt = load_voice(selected_voice, model_size)
         else:
             st.warning(
-                f"保存されたボイスモデルがありません（{model_size}）。"
-                "「オリジナルボイスモデル学習」モードで先にモデルを作成してください。"
+                T["no_saved_model_warning"].format(
+                    model_size=model_size,
+                    mode=T["mode_voice_learning"],
+                )
             )
     else:
         uploaded_model = st.file_uploader(
-            "ボイスモデルファイル (.pt)",
+            T["upload_model_file"],
             type=["pt"],
             key="tts_upload_model",
         )
@@ -424,9 +437,9 @@ elif mode == "音声合成":
             if "audio" in msg:
                 st.audio(msg["audio"], format="audio/wav")
 
-    if text_input := st.chat_input("合成するテキストを入力してください"):
+    if text_input := st.chat_input(T["chat_input_tts"]):
         if voice_prompt is None:
-            st.error("ボイスモデルを選択またはアップロードしてください。")
+            st.error(T["err_select_model"])
         else:
             # ユーザーメッセージ
             user_msg = {
@@ -443,7 +456,7 @@ elif mode == "音声合成":
             with st.chat_message("assistant"):
                 st.session_state.is_generating = True
                 try:
-                    with st.spinner("音声を生成中..."):
+                    with st.spinner(T["generating_audio"]):
                         wav, sr = st.session_state.engine.generate_speech(
                             text=text_input,
                             language=output_lang,
@@ -456,13 +469,13 @@ elif mode == "音声合成":
                         )
                     audio_bytes = audio_to_bytes(wav, sr)
                     msg_id = str(uuid.uuid4())
-                    st.markdown("音声を生成しました")
-                    show_completion_notification("音声合成完了")
+                    st.markdown(T["audio_generated"])
+                    show_completion_notification(T["audio_generated_toast"])
                     st.audio(audio_bytes, format="audio/wav")
                     st.session_state.tts_history.append(
                         {
                             "role": "assistant",
-                            "content": "音声を生成しました",
+                            "content": T["audio_generated"],
                             "audio": audio_bytes,
                             "id": msg_id,
                         }
@@ -474,40 +487,38 @@ elif mode == "音声合成":
 # =============================================================================
 # モード3: オリジナル音声即時合成
 # =============================================================================
-elif mode == "オリジナル音声即時合成":
-    st.header("オリジナル音声即時合成")
-    st.markdown(
-        "リファレンス音声から直接音声合成を行います。ボイスモデルはキャッシュされません。"
-    )
+elif mode == T["mode_instant_tts"]:
+    st.header(T["mode3_header"])
+    st.markdown(T["mode3_desc"])
 
     col_ref, col_out = st.columns(2)
 
     with col_ref:
-        st.subheader("リファレンス設定")
+        st.subheader(T["ref_settings"])
         instant_audio = st.file_uploader(
-            "リファレンス音声",
+            T["ref_audio"],
             type=["wav", "mp3", "flac", "ogg", "m4a"],
             key="instant_audio",
-            help="3秒以上の音声ファイルを推奨します。",
+            help=T["ref_audio_help"],
         )
         instant_ref_text = st.text_area(
-            "文字起こし",
-            placeholder="リファレンス音声の内容",
+            T["transcript"],
+            placeholder=T["transcript_placeholder"],
             key="instant_ref_text",
         )
         instant_ref_lang = st.selectbox(
-            "リファレンス言語",
+            T["ref_lang_label"],
             SUPPORTED_LANGUAGES,
-            index=0,
+            index=_default_lang_idx,
             key="instant_ref_lang",
         )
 
     with col_out:
-        st.subheader("出力設定")
+        st.subheader(T["output_settings"])
         instant_out_lang = st.selectbox(
-            "出力言語",
+            T["output_lang"],
             SUPPORTED_LANGUAGES,
-            index=0,
+            index=_default_lang_idx,
             key="instant_out_lang",
         )
 
@@ -520,9 +531,9 @@ elif mode == "オリジナル音声即時合成":
             if "audio" in msg:
                 st.audio(msg["audio"], format="audio/wav")
 
-    if text_input := st.chat_input("合成するテキストを入力"):
+    if text_input := st.chat_input(T["chat_input_instant"]):
         if not instant_audio or not instant_ref_text:
-            st.error("リファレンス音声と文字起こしを入力してください。")
+            st.error(T["err_fill_ref"])
         elif not validate_audio_duration(instant_audio):
             pass
         else:
@@ -542,7 +553,7 @@ elif mode == "オリジナル音声即時合成":
                 audio_path = save_uploaded_audio(instant_audio)
                 st.session_state.is_generating = True
                 try:
-                    with st.spinner("リファレンス音声を解析して音声を生成中..."):
+                    with st.spinner(T["generating_with_ref"]):
                         wav, sr = st.session_state.engine.generate_speech_direct(
                             text=text_input,
                             language=instant_out_lang,
@@ -556,12 +567,12 @@ elif mode == "オリジナル音声即時合成":
                         )
                     audio_bytes = audio_to_bytes(wav, sr)
                     msg_id = str(uuid.uuid4())
-                    st.markdown("音声を生成しました")
+                    st.markdown(T["audio_generated"])
                     st.audio(audio_bytes, format="audio/wav")
                     st.session_state.instant_history.append(
                         {
                             "role": "assistant",
-                            "content": "音声を生成しました",
+                            "content": T["audio_generated"],
                             "audio": audio_bytes,
                             "id": msg_id,
                         }
@@ -573,53 +584,45 @@ elif mode == "オリジナル音声即時合成":
 # =============================================================================
 # モード4: 音声合成WebAPI
 # =============================================================================
-elif mode == "音声合成WebAPI":
-    st.header("音声合成WebAPI")
-    st.markdown(
-        "VOICEVOX互換のHTTP APIサーバーとして利用できます。\n"
-        "以下のコマンドでAPIサーバーを起動し、他のアプリケーションから音声合成を呼び出せます。"
-    )
+elif mode == T["mode_web_api"]:
+    st.header(T["mode4_header"])
+    st.markdown(T["mode4_desc"])
 
-    st.subheader("サーバー起動コマンド")
+    st.subheader(T["start_cmd"])
 
     col_cmd1, col_cmd2 = st.columns(2)
     with col_cmd1:
         st.code("uv run python api_server.py", language="bash")
-        st.caption("デフォルト: host=127.0.0.1, port=50021")
+        st.caption(T["default_host"])
 
     with col_cmd2:
         st.code(
             "uv run python api_server.py --host 0.0.0.0 --port 50021",
             language="bash",
         )
-        st.caption("ネットワーク公開の例")
+        st.caption(T["network_example"])
 
-    st.info("モデルは常に **1.7B** を使用します。ボイスモデルはこのWebUIで学習・保存済みのものを使用します。")
+    st.info(T["model_info"])
 
     st.divider()
 
-    st.subheader("主要APIエンドポイント（VOICEVOX互換）")
+    st.subheader(T["main_endpoints"])
 
-    with st.expander("GET /version - バージョン取得", expanded=False):
+    with st.expander(T["version_endpoint"], expanded=False):
         st.code('curl http://127.0.0.1:50021/version', language="bash")
 
-    with st.expander("GET /speakers - 話者（ボイスモデル）一覧", expanded=False):
+    with st.expander(T["speakers_endpoint"], expanded=False):
         st.code('curl http://127.0.0.1:50021/speakers', language="bash")
-        st.caption(
-            "保存済みボイスモデルが話者として返されます。"
-            "speaker_id は /voice_models で確認できます。"
-        )
+        st.caption(T["speakers_caption"])
 
-    with st.expander(
-        "POST /audio_query + POST /synthesis - 音声合成（2ステップ）", expanded=True
-    ):
-        st.markdown("**ステップ1: AudioQueryを作成**")
+    with st.expander(T["synthesis_endpoint"], expanded=True):
+        st.markdown(T["step1"])
         st.code(
             'curl -X POST "http://127.0.0.1:50021/audio_query?text=こんにちは&speaker=0"'
             " > query.json",
             language="bash",
         )
-        st.markdown("**ステップ2: 音声合成**")
+        st.markdown(T["step2"])
         st.code(
             'curl -X POST "http://127.0.0.1:50021/synthesis?speaker=0"'
             " -H 'Content-Type: application/json'"
@@ -630,45 +633,36 @@ elif mode == "音声合成WebAPI":
 
     st.divider()
 
-    st.subheader("拡張APIエンドポイント")
+    st.subheader(T["ext_endpoints"])
 
-    with st.expander("GET /voice_models - ボイスモデル一覧（拡張）", expanded=False):
+    with st.expander(T["voice_models_endpoint"], expanded=False):
         st.code("curl http://127.0.0.1:50021/voice_models", language="bash")
 
     st.divider()
 
-    st.subheader("APIドキュメント")
-    st.markdown(
-        "サーバー起動後、以下のURLでインタラクティブなAPIドキュメントを参照できます:\n\n"
-        "- **Swagger UI**: http://127.0.0.1:50021/docs\n"
-        "- **ReDoc**: http://127.0.0.1:50021/redoc"
-    )
+    st.subheader(T["api_docs"])
+    st.markdown(T["api_docs_desc"])
 
     st.divider()
 
-    st.subheader("Pythonサンプルコード")
-    st.code(
-        '''import requests
-
-BASE_URL = "http://127.0.0.1:50021"
-
-# ステップ1: AudioQueryを作成
-response = requests.post(
-    f"{BASE_URL}/audio_query",
-    params={"text": "こんにちは", "speaker": 0},
-)
-query = response.json()
-
-# ステップ2: 音声合成
-response = requests.post(
-    f"{BASE_URL}/synthesis",
-    params={"speaker": 0},
-    json=query,
-)
-
-# WAVファイルとして保存
-with open("output.wav", "wb") as f:
-    f.write(response.content)
-''',
-        language="python",
+    st.subheader(T["python_sample"])
+    py_code = (
+        "import requests\n\n"
+        'BASE_URL = "http://127.0.0.1:50021"\n\n'
+        f'{T["py_step1_comment"]}\n'
+        "response = requests.post(\n"
+        '    f"{BASE_URL}/audio_query",\n'
+        '    params={"text": "こんにちは", "speaker": 0},\n'
+        ")\n"
+        "query = response.json()\n\n"
+        f'{T["py_step2_comment"]}\n'
+        "response = requests.post(\n"
+        '    f"{BASE_URL}/synthesis",\n'
+        '    params={"speaker": 0},\n'
+        "    json=query,\n"
+        ")\n\n"
+        f'{T["py_save_comment"]}\n'
+        'with open("output.wav", "wb") as f:\n'
+        "    f.write(response.content)\n"
     )
+    st.code(py_code, language="python")
