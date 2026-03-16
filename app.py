@@ -110,6 +110,8 @@ if "tts_history" not in st.session_state:
     st.session_state.tts_history = []
 if "instant_history" not in st.session_state:
     st.session_state.instant_history = []
+if "is_generating" not in st.session_state:
+    st.session_state.is_generating = False
 
 
 # --- サイドバー ---
@@ -123,6 +125,7 @@ with st.sidebar:
         ["1.7B", "0.6B"],
         index=0,
         help="1.7B（デフォルト）は高品質、0.6Bは軽量版です。",
+        disabled=st.session_state.is_generating,
     )
 
     st.divider()
@@ -136,6 +139,7 @@ with st.sidebar:
             "音声合成WebAPI",
         ],
         index=0,
+        disabled=st.session_state.is_generating,
     )
 
     st.divider()
@@ -150,6 +154,7 @@ with st.sidebar:
             step=0.05,
             key="gen_temperature",
             help="感情の豊かさを制御します。高いほど表現豊かでランダムな発音、低いほど落ち着いた安定した発音になります。",
+            disabled=st.session_state.is_generating,
         )
         gen_top_p = st.slider(
             "Top-p（核サンプリング）",
@@ -159,6 +164,7 @@ with st.sidebar:
             step=0.05,
             key="gen_top_p",
             help="累積確率が上位p以内のトークンのみからサンプリングします。低いほど安定した出力になります。",
+            disabled=st.session_state.is_generating,
         )
         gen_top_k = st.slider(
             "Top-k",
@@ -168,6 +174,7 @@ with st.sidebar:
             step=1,
             key="gen_top_k",
             help="確率の高い上位k件のトークンのみからサンプリングします。低いほど安定した出力になります。",
+            disabled=st.session_state.is_generating,
         )
         gen_repetition_penalty = st.slider(
             "繰り返し抑制（Repetition Penalty）",
@@ -177,17 +184,18 @@ with st.sidebar:
             step=0.05,
             key="gen_repetition_penalty",
             help="同じ音やフレーズの繰り返しを抑制します。高いほど繰り返しが起きにくくなります。",
+            disabled=st.session_state.is_generating,
         )
 
     st.divider()
 
     # モードに応じた履歴クリアボタン
     if mode == "音声合成" and st.session_state.tts_history:
-        if st.button("チャット履歴クリア", key="clear_tts"):
+        if st.button("チャット履歴クリア", key="clear_tts", disabled=st.session_state.is_generating):
             st.session_state.tts_history = []
             st.rerun()
     elif mode == "オリジナル音声即時合成" and st.session_state.instant_history:
-        if st.button("チャット履歴クリア", key="clear_instant"):
+        if st.button("チャット履歴クリア", key="clear_instant", disabled=st.session_state.is_generating):
             st.session_state.instant_history = []
             st.rerun()
 
@@ -249,15 +257,19 @@ if mode == "オリジナルボイスモデル学習":
                 pass
             else:
                 audio_path = save_uploaded_audio(audio_file)
-                with st.spinner("ボイスモデルを作成中..."):
-                    prompt_items = st.session_state.engine.create_voice_prompt(
-                        ref_audio=audio_path,
-                        ref_text=ref_text,
-                        model_size=model_size,
-                    )
-                    save_voice(nickname, prompt_items, ref_lang, model_size)
-                st.success(f"ボイスモデル '{nickname}' を作成しました。")
-                show_completion_notification("ボイスモデル作成完了")
+                st.session_state.is_generating = True
+                try:
+                    with st.spinner("ボイスモデルを作成中..."):
+                        prompt_items = st.session_state.engine.create_voice_prompt(
+                            ref_audio=audio_path,
+                            ref_text=ref_text,
+                            model_size=model_size,
+                        )
+                        save_voice(nickname, prompt_items, ref_lang, model_size)
+                    st.success(f"ボイスモデル '{nickname}' を作成しました。")
+                    show_completion_notification("ボイスモデル作成完了")
+                finally:
+                    st.session_state.is_generating = False
                 st.rerun()
 
         if preview_clicked:
@@ -268,21 +280,25 @@ if mode == "オリジナルボイスモデル学習":
             else:
                 audio_path = save_uploaded_audio(audio_file)
                 greeting = GREETINGS.get(ref_lang, GREETINGS["English"])
-                with st.spinner(f"挨拶音声を生成中（{ref_lang}）..."):
-                    prompt_items = st.session_state.engine.create_voice_prompt(
-                        ref_audio=audio_path,
-                        ref_text=ref_text,
-                        model_size=model_size,
-                    )
-                    wav, sr = st.session_state.engine.generate_speech(
-                        text=greeting,
-                        language=ref_lang,
-                        voice_clone_prompt=prompt_items,
-                        model_size=model_size,
-                    )
-                st.info(f"挨拶: {greeting}")
-                show_completion_notification("プレビュー完了")
-                st.audio(audio_to_bytes(wav, sr), format="audio/wav")
+                st.session_state.is_generating = True
+                try:
+                    with st.spinner(f"挨拶音声を生成中（{ref_lang}）..."):
+                        prompt_items = st.session_state.engine.create_voice_prompt(
+                            ref_audio=audio_path,
+                            ref_text=ref_text,
+                            model_size=model_size,
+                        )
+                        wav, sr = st.session_state.engine.generate_speech(
+                            text=greeting,
+                            language=ref_lang,
+                            voice_clone_prompt=prompt_items,
+                            model_size=model_size,
+                        )
+                    st.info(f"挨拶: {greeting}")
+                    show_completion_notification("プレビュー完了")
+                    st.audio(audio_to_bytes(wav, sr), format="audio/wav")
+                finally:
+                    st.session_state.is_generating = False
 
     with col_saved:
         st.subheader("保存済みモデル")
@@ -407,13 +423,6 @@ elif mode == "音声合成":
             st.markdown(msg["content"])
             if "audio" in msg:
                 st.audio(msg["audio"], format="audio/wav")
-                st.download_button(
-                    "ダウンロード",
-                    data=msg["audio"],
-                    file_name=f"tts_{msg['id']}.wav",
-                    mime="audio/wav",
-                    key=f"dl_{msg['id']}",
-                )
 
     if text_input := st.chat_input("合成するテキストを入力してください"):
         if voice_prompt is None:
@@ -432,38 +441,34 @@ elif mode == "音声合成":
 
             # 音声生成
             with st.chat_message("assistant"):
-                with st.spinner("音声を生成中..."):
-                    wav, sr = st.session_state.engine.generate_speech(
-                        text=text_input,
-                        language=output_lang,
-                        voice_clone_prompt=voice_prompt,
-                        model_size=model_size,
-                        temperature=gen_temperature,
-                        repetition_penalty=gen_repetition_penalty,
-                        top_p=gen_top_p,
-                        top_k=gen_top_k,
+                st.session_state.is_generating = True
+                try:
+                    with st.spinner("音声を生成中..."):
+                        wav, sr = st.session_state.engine.generate_speech(
+                            text=text_input,
+                            language=output_lang,
+                            voice_clone_prompt=voice_prompt,
+                            model_size=model_size,
+                            temperature=gen_temperature,
+                            repetition_penalty=gen_repetition_penalty,
+                            top_p=gen_top_p,
+                            top_k=gen_top_k,
+                        )
+                    audio_bytes = audio_to_bytes(wav, sr)
+                    msg_id = str(uuid.uuid4())
+                    st.markdown("音声を生成しました")
+                    show_completion_notification("音声合成完了")
+                    st.audio(audio_bytes, format="audio/wav")
+                    st.session_state.tts_history.append(
+                        {
+                            "role": "assistant",
+                            "content": "音声を生成しました",
+                            "audio": audio_bytes,
+                            "id": msg_id,
+                        }
                     )
-                audio_bytes = audio_to_bytes(wav, sr)
-                msg_id = str(uuid.uuid4())
-                st.markdown("音声を生成しました")
-                show_completion_notification("音声合成完了")
-                st.audio(audio_bytes, format="audio/wav")
-                st.download_button(
-                    "ダウンロード",
-                    data=audio_bytes,
-                    file_name=f"tts_{msg_id}.wav",
-                    mime="audio/wav",
-                    key=f"dl_{msg_id}",
-                )
-
-            st.session_state.tts_history.append(
-                {
-                    "role": "assistant",
-                    "content": "音声を生成しました",
-                    "audio": audio_bytes,
-                    "id": msg_id,
-                }
-            )
+                finally:
+                    st.session_state.is_generating = False
 
 
 # =============================================================================
@@ -514,13 +519,6 @@ elif mode == "オリジナル音声即時合成":
             st.markdown(msg["content"])
             if "audio" in msg:
                 st.audio(msg["audio"], format="audio/wav")
-                st.download_button(
-                    "ダウンロード",
-                    data=msg["audio"],
-                    file_name=f"instant_{msg['id']}.wav",
-                    mime="audio/wav",
-                    key=f"instant_dl_{msg['id']}",
-                )
 
     if text_input := st.chat_input("合成するテキストを入力"):
         if not instant_audio or not instant_ref_text:
@@ -542,38 +540,34 @@ elif mode == "オリジナル音声即時合成":
             # 音声生成
             with st.chat_message("assistant"):
                 audio_path = save_uploaded_audio(instant_audio)
-                with st.spinner("リファレンス音声を解析して音声を生成中..."):
-                    wav, sr = st.session_state.engine.generate_speech_direct(
-                        text=text_input,
-                        language=instant_out_lang,
-                        ref_audio=audio_path,
-                        ref_text=instant_ref_text,
-                        model_size=model_size,
-                        temperature=gen_temperature,
-                        repetition_penalty=gen_repetition_penalty,
-                        top_p=gen_top_p,
-                        top_k=gen_top_k,
+                st.session_state.is_generating = True
+                try:
+                    with st.spinner("リファレンス音声を解析して音声を生成中..."):
+                        wav, sr = st.session_state.engine.generate_speech_direct(
+                            text=text_input,
+                            language=instant_out_lang,
+                            ref_audio=audio_path,
+                            ref_text=instant_ref_text,
+                            model_size=model_size,
+                            temperature=gen_temperature,
+                            repetition_penalty=gen_repetition_penalty,
+                            top_p=gen_top_p,
+                            top_k=gen_top_k,
+                        )
+                    audio_bytes = audio_to_bytes(wav, sr)
+                    msg_id = str(uuid.uuid4())
+                    st.markdown("音声を生成しました")
+                    st.audio(audio_bytes, format="audio/wav")
+                    st.session_state.instant_history.append(
+                        {
+                            "role": "assistant",
+                            "content": "音声を生成しました",
+                            "audio": audio_bytes,
+                            "id": msg_id,
+                        }
                     )
-                audio_bytes = audio_to_bytes(wav, sr)
-                msg_id = str(uuid.uuid4())
-                st.markdown("音声を生成しました")
-                st.audio(audio_bytes, format="audio/wav")
-                st.download_button(
-                    "ダウンロード",
-                    data=audio_bytes,
-                    file_name=f"instant_{msg_id}.wav",
-                    mime="audio/wav",
-                    key=f"instant_dl_{msg_id}",
-                )
-
-            st.session_state.instant_history.append(
-                {
-                    "role": "assistant",
-                    "content": "音声を生成しました",
-                    "audio": audio_bytes,
-                    "id": msg_id,
-                }
-            )
+                finally:
+                    st.session_state.is_generating = False
 
 
 # =============================================================================
