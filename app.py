@@ -12,7 +12,13 @@ import streamlit.components.v1 as components
 import torch
 
 from engine import GREETINGS, SUPPORTED_LANGUAGES, TTSEngine
-from i18n import detect_ui_language, get_tts_default_language, get_translations
+from i18n import (
+    UI_LANGUAGE_NAMES,
+    UI_LANGUAGES,
+    detect_ui_language,
+    get_tts_default_language,
+    get_translations,
+)
 from voice_store import (
     export_voice,
     import_voice,
@@ -27,12 +33,24 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- 言語検出と翻訳辞書 ---
-_UI_LANG = detect_ui_language()
-T = get_translations(_UI_LANG)
+# --- セッション状態の初期化 ---
+
+if "ui_lang" not in st.session_state:
+    st.session_state.ui_lang = detect_ui_language()
+if "engine" not in st.session_state:
+    st.session_state.engine = TTSEngine()
+if "tts_history" not in st.session_state:
+    st.session_state.tts_history = []
+if "instant_history" not in st.session_state:
+    st.session_state.instant_history = []
+if "is_generating" not in st.session_state:
+    st.session_state.is_generating = False
+
+# --- 言語設定と翻訳辞書（セッション状態から取得）---
+T = get_translations(st.session_state.ui_lang)
 
 # デフォルト TTS 言語 (SUPPORTED_LANGUAGES のインデックス)
-_DEFAULT_TTS_LANG = get_tts_default_language(_UI_LANG)
+_DEFAULT_TTS_LANG = get_tts_default_language(st.session_state.ui_lang)
 _DEFAULT_TTS_INDEX = (
     SUPPORTED_LANGUAGES.index(_DEFAULT_TTS_LANG)
     if _DEFAULT_TTS_LANG in SUPPORTED_LANGUAGES
@@ -48,6 +66,20 @@ MODE_WEBAPI = "webapi"
 # --- 内部ボイスソースキー ---
 VOICE_SOURCE_SAVED = "saved"
 VOICE_SOURCE_UPLOAD = "upload"
+
+
+# --- UI 言語変更コールバック ---
+
+# TTS 言語セレクトボックスのセッション状態キー一覧
+_TTS_LANG_KEYS = ("train_lang", "import_lang", "tts_lang", "instant_ref_lang", "instant_out_lang")
+
+
+def on_ui_lang_change() -> None:
+    """UI 言語が変更されたとき、TTS 言語の各セレクトボックスをデフォルト値にリセットする。"""
+    new_tts_default = get_tts_default_language(st.session_state.ui_lang)
+    for key in _TTS_LANG_KEYS:
+        if key in st.session_state:
+            st.session_state[key] = new_tts_default
 
 
 # --- ユーティリティ ---
@@ -129,18 +161,6 @@ def show_completion_notification(message: str | None = None):
     )
 
 
-# --- セッション状態の初期化 ---
-
-if "engine" not in st.session_state:
-    st.session_state.engine = TTSEngine()
-if "tts_history" not in st.session_state:
-    st.session_state.tts_history = []
-if "instant_history" not in st.session_state:
-    st.session_state.instant_history = []
-if "is_generating" not in st.session_state:
-    st.session_state.is_generating = False
-
-
 # --- サイドバー ---
 
 with st.sidebar:
@@ -148,6 +168,17 @@ with st.sidebar:
     st.caption(
         T["device_label"].format(device=st.session_state.engine.get_device_info())
     )
+
+    st.selectbox(
+        T["ui_lang_selector"],
+        UI_LANGUAGES,
+        format_func=lambda x: UI_LANGUAGE_NAMES[x],
+        key="ui_lang",
+        on_change=on_ui_lang_change,
+        disabled=st.session_state.is_generating,
+    )
+
+    st.divider()
 
     model_size = st.selectbox(
         T["model_size"],

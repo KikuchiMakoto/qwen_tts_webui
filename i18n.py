@@ -7,6 +7,13 @@ import os
 UI_LANGUAGES = ["ja", "en", "zh"]
 DEFAULT_UI_LANGUAGE = "ja"
 
+# UI 言語の表示名（ネイティブ表記）
+UI_LANGUAGE_NAMES: dict[str, str] = {
+    "ja": "🇯🇵 日本語",
+    "en": "🇺🇸 English",
+    "zh": "🇨🇳 中文",
+}
+
 # TTS 言語名 → SUPPORTED_LANGUAGES のインデックスはアプリ側で解決する
 _TTS_LANG_MAP: dict[str, str] = {
     "ja": "Japanese",
@@ -55,6 +62,8 @@ def get_tts_default_language(ui_lang: str) -> str:
 TRANSLATIONS: dict[str, dict[str, str]] = {
     # ------------------------------------------------------------------ 日本語
     "ja": {
+        # 表示言語セレクタ
+        "ui_lang_selector": "表示言語",
         # デバイス
         "device_label": "デバイス: {device}",
         # サイドバー
@@ -194,6 +203,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     # ------------------------------------------------------------------ English
     "en": {
+        # UI language selector
+        "ui_lang_selector": "Display Language",
         # Device
         "device_label": "Device: {device}",
         # Sidebar
@@ -338,6 +349,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     # ------------------------------------------------------------------ 中文
     "zh": {
+        # 界面语言选择器
+        "ui_lang_selector": "界面语言",
         # 设备
         "device_label": "设备: {device}",
         # 侧边栏
