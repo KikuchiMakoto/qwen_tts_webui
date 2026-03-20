@@ -103,7 +103,7 @@ def save_uploaded_audio(uploaded_file) -> str:
 # 音声学習に使用するリファレンス音声の長さ制約（秒）
 VOICE_LEARNING_MIN_DURATION: float = 3.0
 VOICE_LEARNING_MAX_DURATION: float = 15.0
-NOTIFY_SOUND_PATH = Path(__file__).parent / "static" / "notify.ogg"
+NOTIFICATION_SOUND_PATH = Path(__file__).parent / "static" / "notify.ogg"
 
 
 def get_audio_duration(uploaded_file) -> float:
@@ -147,8 +147,11 @@ def show_completion_notification(message: str | None = None):
     if message is None:
         message = T["completion_default"]
     st.toast(message, icon="✅")
-    if NOTIFY_SOUND_PATH.exists():
-        st.audio(NOTIFY_SOUND_PATH.read_bytes(), format="audio/ogg", autoplay=True)
+    if NOTIFICATION_SOUND_PATH.exists():
+        st.audio(NOTIFICATION_SOUND_PATH.read_bytes(), format="audio/ogg", autoplay=True)
+    elif not st.session_state.get("notification_sound_missing_warned", False):
+        st.session_state.notification_sound_missing_warned = True
+        st.warning("通知音ファイルが見つかりません: static/notify.ogg")
 
 
 # --- サイドバー ---
