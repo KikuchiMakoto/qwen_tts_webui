@@ -8,7 +8,6 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import streamlit as st
-import streamlit.components.v1 as components
 import torch
 
 from engine import GREETINGS, SUPPORTED_LANGUAGES, TTSEngine
@@ -104,6 +103,7 @@ def save_uploaded_audio(uploaded_file) -> str:
 # 音声学習に使用するリファレンス音声の長さ制約（秒）
 VOICE_LEARNING_MIN_DURATION: float = 3.0
 VOICE_LEARNING_MAX_DURATION: float = 15.0
+NOTIFY_SOUND_PATH = Path(__file__).parent / "static" / "notify.ogg"
 
 
 def get_audio_duration(uploaded_file) -> float:
@@ -147,18 +147,8 @@ def show_completion_notification(message: str | None = None):
     if message is None:
         message = T["completion_default"]
     st.toast(message, icon="✅")
-    components.html(
-        """
-        <script>
-        const audio = new Audio('/static/notify.ogg');
-        audio.load();
-        audio.play().catch(() => {
-            console.log('音声再生がブロックされました');
-        });
-        </script>
-        """,
-        height=0,
-    )
+    if NOTIFY_SOUND_PATH.exists():
+        st.audio(NOTIFY_SOUND_PATH.read_bytes(), format="audio/ogg", autoplay=True)
 
 
 # --- サイドバー ---
